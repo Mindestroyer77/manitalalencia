@@ -1,0 +1,122 @@
+# Importar Librerías 
+import numpy as np
+import cv2
+import math
+
+
+# Abrir cámara
+captura = cv2.VideoCapture(1)
+
+while captura.isOpened():
+
+    # Lee cada cuadros obtenido por la cámara
+    ret, cuadros = captura.read()
+    
+    
+    # Se deimita una región de interés (ROI) y se corta ese pedazo de imagen, que es el que se va a trabajar
+    cv2.rectangle(cuadros, (100, 100), (300, 300), (0, 255, 0), 0)
+    crop_image = cuadros[100:300, 100:300]
+
+    # Apliación de filtro gaussiano
+    blur = cv2.GaussianBlur(crop_image, (3, 3), 0)
+
+    # Cambiar el sistema de color de BGR -> HSV
+    hsv = cv2.cvtColor(blur, cv2.COLOR_BGR2HSV)
+
+    # Binarizamos la imagen y separamos en 2 colores, para la piel blanco y el fondo negro
+    mask2 = cv2.inRange(hsv, np.array([2, 0, 0]), np.array([20, 255, 255]))
+
+    # Kernel para transformaciones morfologicas
+    kernel = np.ones((5, 5))
+
+    # Transformaciones morfológicas para eliminar el ruido que se obtiene en la imagen
+    dilacion = cv2.dilate(mask2, kernel, iterations=1)
+    erosion = cv2.erode(dilacion, kernel, iterations=1)
+
+    # Filtro gaussiano y se aplica un umbral
+    filtrado = cv2.GaussianBlur(erosion, (3, 3), 0)
+    ret, thresh = cv2.threshold(filtrado, 127, 255, 0)
+
+    # Muestra imagen umbralizada
+   # cv2.imshow("CAPTURA", img1)
+    cv2.imshow("binarizar", mask2)
+    cv2.imshow("GAUSS", blur)
+    cv2.imshow("dilatacion", dilacion)
+    cv2.imshow("erosion", erosion)
+    cv2.imshow("gaussiano", filtrado)
+    cv2.imshow("HSV", hsv)
+
+    # Detección de contornos
+    image, contours, hierarchy = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+
+    try:
+        # Encuentra contorno con área máxima
+        contorno = max(contours, key=lambda x: cv2.contourArea(x))
+
+        # Crea un rectangulo que delimita el contorno
+        x, y, w, h = cv2.boundingRect(contorno)
+        cv2.rectangle(crop_image, (x, y), (x + w, y + h), (0, 0, 255), 0)
+
+        # función de convex hull
+        hull = cv2.convexHull(contorno)
+
+        # Dibuja contorno
+        drawing = np.zeros(crop_image.shape, np.uint8)
+        cv2.drawContours(drawing, [contorno], -1, (0, 255, 0), 0)
+        cv2.drawContours(drawing, [hull], -1, (0, 0, 255), 0)
+
+        # Encuentra defectos de convexión
+        hull = cv2.convexHull(contorno, returnPoints=False)
+        defectos = cv2.convexityDefects(contorno, hull)
+
+        # Uso de regla de cosenos para encontrar el ángulo del punto más lejano del inicio y final para los defectos
+        contar_defectos = 0
+
+        for i in range(defectos.shape[0]):
+            s, e, f, d = defectos[i, 0]
+            inicio = tuple(contorno[s][0])
+            fin = tuple(contorno[e][0])
+            lejos = tuple(contorno[f][0])
+
+            a = math.sqrt((fin[0] - inicio[0]) ** 2 + (fin[1] - inicio[1]) ** 2)
+            b = math.sqrt((lejos[0] - inicio[0]) ** 2 + (lejos[1] - inicio[1]) ** 2)
+            c = math.sqrt((fin[0] - lejos[0]) ** 2 + (fin[1] - lejos[1]) ** 2)
+            angulo = (math.acos((b ** 2 + c ** 2 - a ** 2) / (2 * b * c)) * 180) / 3.14
+
+            # si el ángulo > 90 dibuja un círculo en el punto más lejano
+            if angulo <= 90:
+                contar_defectos += 1
+                cv2.circle(crop_image, lejos, 1, [0, 0, 255], -1)
+
+            cv2.line(crop_image, inicio, fin, [0, 255, 0], 2)
+
+        # Imprimir número de dedos identificados
+        if contar_defectos == 0:
+            cv2.putText(cuadros, "Uno", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 2,(0,0,255),2)
+        elif contar_defectos == 1:
+            cv2.putText(cuadros, "Dos", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 2,(0,0,255), 2)
+        elif contar_defectos == 2:
+            cv2.putText(cuadros, "Tres", (5, 50), cv2.FONT_HERSHEY_SIMPLEX, 2,(0,0,255), 2)
+        elif contar_defectos == 3:
+            cv2.putText(cuadros, "Cuatro", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 2,(0,0,255), 2)
+        elif contar_defectos == 4:
+            cv2.putText(cuadros, "Cinco", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 2,(0,0,255), 2)
+        else:
+            pass
+    except:
+        pass
+
+    # Muestra imagenes
+    cv2.imshow("Conteo de Dedos", cuadros)
+    all_image = np.hstack((drawing, crop_image))
+    cv2.imshow('Contornos', all_image)
+    
+    
+
+    # Cerrar si se presiona q
+    if cv2.waitKey(1) == ord('q'):
+        break
+
+captura.release()
+cv2.destroyAllWindows() 
+    
